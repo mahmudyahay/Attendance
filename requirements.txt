@@ -1,7 +1,8 @@
 streamlit
 opencv-python-headless
+numpy
+qrcode
 torch
 torchvision
-numpy
-pandas
 Pillow
+facenet-pytorch
