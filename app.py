@@ -1,7 +1,6 @@
 from pathlib import Path
 from datetime import datetime
 import hashlib
-import json
 import uuid
 import textwrap
 import base64
@@ -17,28 +16,36 @@ import torch
 from PIL import Image
 from facenet_pytorch import MTCNN, InceptionResnetV1
 
+from supabase import create_client, Client
+
+
+# ============================================================
+# SUPABASE CLIENT
+# ============================================================
+
+@st.cache_resource
+def init_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+
+supabase = init_supabase()
+
 
 # ============================================================
 # PATHS
 # ============================================================
+# Only DATA_DIR is still needed — it's used as temporary local
+# storage for face photos captured during registration, before
+# they're converted into an embedding and stored permanently in
+# Supabase. Everything else (users, students, embeddings,
+# attendance sessions) now lives in Supabase instead of on disk.
 
 BASE_DIR = Path(__file__).resolve().parent
-
 DATA_DIR = BASE_DIR / "data"
-RESULTS_DIR = BASE_DIR / "results"
-STORAGE_DIR = BASE_DIR / "storage"
-ATTENDANCE_DIR = STORAGE_DIR / "attendance"
 
-USERS_FILE = STORAGE_DIR / "users.json"
-STUDENTS_FILE = STORAGE_DIR / "students.json"
-EMBEDDINGS_FILE = RESULTS_DIR / "embeddings.pt"
-
-
-# Create required folders
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-ATTENDANCE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================
@@ -431,54 +438,6 @@ for key, value in DEFAULT_STATE.items():
 
 
 # ============================================================
-# JSON HELPERS
-# ============================================================
-
-def load_json(file_path, default):
-
-    if not file_path.exists():
-
-        return default
-
-    try:
-
-        with open(
-            file_path,
-            "r",
-            encoding="utf-8",
-        ) as file:
-
-            return json.load(file)
-
-    except (
-        json.JSONDecodeError,
-        OSError,
-    ):
-
-        return default
-
-
-def save_json(file_path, data):
-
-    file_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    with open(
-        file_path,
-        "w",
-        encoding="utf-8",
-    ) as file:
-
-        json.dump(
-            data,
-            file,
-            indent=4,
-        )
-
-
-# ============================================================
 # PASSWORD
 # ============================================================
 
@@ -490,91 +449,90 @@ def hash_password(password):
 
 
 # ============================================================
-# USER SYSTEM
+# USER SYSTEM  (Supabase: "users" table)
 # ============================================================
-
-def initialize_users():
-
-    users = load_json(
-        USERS_FILE,
-        None,
-    )
-
-    # If file doesn't exist or has wrong structure
-    if not isinstance(users, list):
-
-        users = []
-
-    # Create default admin if no users exist
-    if len(users) == 0:
-
-        users = [
-            {
-                "username": "admin",
-                "password": hash_password(
-                    "admin123"
-                ),
-                "name": "System Administrator",
-                "role": "admin",
-            }
-        ]
-
-        save_json(
-            USERS_FILE,
-            users,
-        )
-
-
-initialize_users()
-
 
 def authenticate(username, password):
 
-    users = load_json(
-        USERS_FILE,
-        [],
+    password_hash = hash_password(password)
+
+    response = (
+        supabase.table("users")
+        .select("*")
+        .eq("username", username)
+        .eq("password_hash", password_hash)
+        .execute()
     )
 
-    if not isinstance(users, list):
-
-        return None
-
-    password_hash = hash_password(
-        password
-    )
-
-    for user in users:
-
-        if not isinstance(user, dict):
-
-            continue
-
-        if (
-            user.get("username") == username
-            and user.get("password") == password_hash
-        ):
-
-            return user
+    if response.data:
+        return response.data[0]
 
     return None
 
 
+def get_staff_accounts():
+
+    response = (
+        supabase.table("users")
+        .select("*")
+        .eq("role", "staff")
+        .order("name")
+        .execute()
+    )
+
+    return response.data or []
+
+
+def username_exists(username):
+
+    response = (
+        supabase.table("users")
+        .select("id")
+        .eq("username", username)
+        .execute()
+    )
+
+    return bool(response.data)
+
+
+def create_staff_account(name, username, password):
+
+    supabase.table("users").insert(
+        {
+            "username": username,
+            "password_hash": hash_password(password),
+            "name": name,
+            "role": "staff",
+        }
+    ).execute()
+
+
 # ============================================================
-# STUDENTS
+# STUDENTS  (Supabase: "students" table)
 # ============================================================
 
 def load_students():
 
-    students = load_json(
-        STUDENTS_FILE,
-        [],
+    response = (
+        supabase.table("students")
+        .select("*")
+        .order("registered_at", desc=True)
+        .execute()
     )
 
-    if not isinstance(students, list):
+    return response.data or []
 
-        return []
 
-    return students
+def upsert_student(name, admission_number):
+
+    supabase.table("students").upsert(
+        {
+            "admission_number": admission_number,
+            "name": name,
+            "registered_at": datetime.now().isoformat(),
+        },
+        on_conflict="admission_number",
+    ).execute()
 
 
 # ============================================================
@@ -651,74 +609,52 @@ def get_face_embedding(image):
 
 
 # ============================================================
-# EMBEDDING STORAGE
+# EMBEDDING STORAGE  (Supabase: "face_embeddings" table)
 # ============================================================
+# Embeddings are 512-number FaceNet vectors. Postgres can't
+# store a PyTorch tensor directly, so we convert tensor <-> list
+# of floats when saving/loading. The math and comparisons stay
+# identical to before, only the storage layer changed.
 
 def load_embeddings():
 
-    if not EMBEDDINGS_FILE.exists():
+    response = supabase.table("face_embeddings").select("*").execute()
 
-        torch.save(
-            [],
-            EMBEDDINGS_FILE,
+    embeddings = []
+
+    for row in response.data or []:
+
+        embedding_values = row.get("embedding")
+
+        if not embedding_values:
+            continue
+
+        embedding_tensor = torch.tensor(
+            embedding_values,
+            dtype=torch.float32,
         )
 
-        return []
-
-    try:
-
-        embeddings = torch.load(
-            EMBEDDINGS_FILE,
-            weights_only=False,
-        )
-
-        if isinstance(
-            embeddings,
-            list,
-        ):
-
-            return embeddings
-
-        return []
-
-    except TypeError:
-
-        # Compatibility with older PyTorch
-        try:
-
-            embeddings = torch.load(
-                EMBEDDINGS_FILE
+        embeddings.append(
+            (
+                embedding_tensor,
+                row.get("name"),
+                row.get("admission_number"),
             )
+        )
 
-            if isinstance(
-                embeddings,
-                list,
-            ):
-
-                return embeddings
-
-        except Exception:
-
-            pass
-
-        return []
-
-    except Exception:
-
-        return []
+    return embeddings
 
 
-def save_embeddings(embeddings):
+def save_embedding(name, admission_number, embedding_tensor):
 
-    RESULTS_DIR.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    torch.save(
-        embeddings,
-        EMBEDDINGS_FILE,
-    )
+    supabase.table("face_embeddings").upsert(
+        {
+            "admission_number": admission_number,
+            "name": name,
+            "embedding": embedding_tensor.tolist(),
+        },
+        on_conflict="admission_number",
+    ).execute()
 
 
 # ============================================================
@@ -810,27 +746,22 @@ def register_face(
         dim=0,
     )
 
-    embeddings = load_embeddings()
-
-    # Remove previous registration
-    embeddings = [
-        item
-        for item in embeddings
-        if len(item) >= 3
-        and item[2] != admission_number
-    ]
-
-    embeddings.append(
-        (
-            average_embedding,
-            name,
-            admission_number,
-        )
+    save_embedding(
+        name,
+        admission_number,
+        average_embedding,
     )
 
-    save_embeddings(
-        embeddings
-    )
+    # The embedding is now safely stored in Supabase, so the
+    # temporary local photos are no longer needed. Clean them up
+    # so the app's local disk doesn't fill up with images that
+    # would be wiped on the next redeploy anyway.
+    for image_path in image_files:
+
+        try:
+            image_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
     return (
         True,
@@ -915,71 +846,63 @@ def recognize_face(
 
 
 # ============================================================
-# ATTENDANCE SESSION
+# ATTENDANCE SESSION  (Supabase: "attendance_sessions" table)
 # ============================================================
-
-def session_file(session_id):
-
-    return ATTENDANCE_DIR / f"{session_id}.json"
-
 
 def save_attendance_session(session):
 
-    save_json(
-        session_file(
-            session["session_id"]
-        ),
-        session,
-    )
+    payload = {
+        "session_id": session.get("session_id"),
+        "course": session.get("course"),
+        "lecturer": session.get("lecturer"),
+        "duration_minutes": session.get("duration_minutes"),
+        "status": session.get("status", "active"),
+        "created_by": session.get("created_by"),
+        "attendance": session.get("attendance", []),
+    }
+
+    if session.get("created_at"):
+        payload["created_at"] = session["created_at"]
+
+    supabase.table("attendance_sessions").upsert(
+        payload,
+        on_conflict="session_id",
+    ).execute()
 
 
 def load_attendance_session(session_id):
 
-    file_path = session_file(
-        session_id
+    response = (
+        supabase.table("attendance_sessions")
+        .select("*")
+        .eq("session_id", session_id)
+        .execute()
     )
 
-    if not file_path.exists():
+    if response.data:
+        return response.data[0]
 
-        return None
-
-    return load_json(
-        file_path,
-        None,
-    )
+    return None
 
 
 def get_all_sessions():
 
-    sessions = []
-
-    for file_path in ATTENDANCE_DIR.glob(
-        "*.json"
-    ):
-
-        session = load_json(
-            file_path,
-            None,
-        )
-
-        if isinstance(
-            session,
-            dict,
-        ):
-
-            sessions.append(
-                session
-            )
-
-    sessions.sort(
-        key=lambda x: x.get(
-            "created_at",
-            "",
-        ),
-        reverse=True,
+    response = (
+        supabase.table("attendance_sessions")
+        .select("*")
+        .order("created_at", desc=True)
+        .execute()
     )
 
-    return sessions
+    return response.data or []
+
+
+def delete_attendance_session(session_id):
+
+    supabase.table("attendance_sessions").delete().eq(
+        "session_id",
+        session_id,
+    ).execute()
 
 
 # ============================================================
@@ -1318,27 +1241,11 @@ def admin_dashboard():
         "Manage your attendance system from one place.",
     )
 
-    users = load_json(
-        USERS_FILE,
-        [],
-    )
+    staff_count = len(get_staff_accounts())
 
     students = load_students()
 
     sessions = get_all_sessions()
-
-    if not isinstance(users, list):
-
-        users = []
-
-    staff_count = len(
-        [
-            user
-            for user in users
-            if isinstance(user, dict)
-            and user.get("role") == "staff"
-        ]
-    )
 
     html(
         """
@@ -1578,53 +1485,25 @@ def manage_staff():
                     "Passwords do not match."
                 )
 
+            elif username_exists(username):
+
+                st.error(
+                    "Username already exists."
+                )
+
             else:
 
-                users = load_json(
-                    USERS_FILE,
-                    [],
+                create_staff_account(
+                    name,
+                    username,
+                    password,
                 )
 
-                if not isinstance(
-                    users,
-                    list,
-                ):
-
-                    users = []
-
-                exists = any(
-                    isinstance(user, dict)
-                    and user.get("username") == username
-                    for user in users
+                st.success(
+                    "Staff account created successfully."
                 )
 
-                if exists:
-
-                    st.error(
-                        "Username already exists."
-                    )
-
-                else:
-
-                    users.append(
-                        {
-                            "username": username,
-                            "password": hash_password(
-                                password
-                            ),
-                            "name": name,
-                            "role": "staff",
-                        }
-                    )
-
-                    save_json(
-                        USERS_FILE,
-                        users,
-                    )
-
-                    st.success(
-                        "Staff account created successfully."
-                    )
+                st.rerun()
 
     st.write("")
 
@@ -1632,17 +1511,7 @@ def manage_staff():
         "Staff Accounts"
     )
 
-    users = load_json(
-        USERS_FILE,
-        [],
-    )
-
-    staff = [
-        user
-        for user in users
-        if isinstance(user, dict)
-        and user.get("role") == "staff"
-    ]
+    staff = get_staff_accounts()
 
     if not staff:
 
@@ -2042,7 +1911,7 @@ def attendance_records():
             with action4:
                 if st.button("Delete", key=f"delete_{session_id}", use_container_width=True):
                     try:
-                        session_file(session_id).unlink(missing_ok=True)
+                        delete_attendance_session(session_id)
                         if st.session_state.get("active_session") == session_id:
                             st.session_state.active_session = None
                         if st.session_state.get("view_qr_session") == session_id:
@@ -2053,7 +1922,7 @@ def attendance_records():
                             st.session_state.view_attendance_session = None
                         st.success(f"{course} attendance session deleted.")
                         st.rerun()
-                    except OSError as exc:
+                    except Exception as exc:
                         st.error(f"Unable to delete session: {exc}")
 
             if st.session_state.get("view_qr_session") == session_id:
@@ -2379,32 +2248,9 @@ def student_register():
 
             if success:
 
-                students = load_students()
-
-                students = [
-                    student
-                    for student in students
-                    if student.get(
-                        "admission_number"
-                    )
-                    != admission_number.strip()
-                ]
-
-                students.append(
-                    {
-                        "name": name.strip(),
-                        "admission_number":
-                            admission_number.strip(),
-                        "registered_at":
-                            datetime.now().strftime(
-                                "%Y-%m-%d %H:%M:%S"
-                            ),
-                    }
-                )
-
-                save_json(
-                    STUDENTS_FILE,
-                    students,
+                upsert_student(
+                    name.strip(),
+                    admission_number.strip(),
                 )
 
                 st.success(
