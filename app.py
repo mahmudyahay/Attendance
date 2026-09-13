@@ -44,8 +44,50 @@ supabase = init_supabase()
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
+ASSETS_DIR = BASE_DIR / "assets"
+LOGO_PATH = ASSETS_DIR / "logo.png"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ============================================================
+# BRANDING
+# ============================================================
+
+UNIVERSITY_NAME = "Usman Dan Fodiyo University Sokoto"
+DEPARTMENT_NAME = "Department of Computer Science"
+
+
+def get_logo_base64():
+    """
+    Returns the university logo as a base64 string so it can be
+    embedded directly inside custom HTML cards. Returns None if
+    the logo file hasn't been placed in the assets folder yet.
+    """
+
+    if not LOGO_PATH.exists():
+        return None
+
+    with open(LOGO_PATH, "rb") as file:
+        return base64.b64encode(file.read()).decode("utf-8")
+
+
+def logo_img_tag(size=64):
+    """
+    Returns an <img> tag for the logo, or an empty string if the
+    logo file is missing (so the layout doesn't break).
+    """
+
+    logo_base64 = get_logo_base64()
+
+    if not logo_base64:
+        return ""
+
+    return (
+        f'<img src="data:image/png;base64,{logo_base64}" '
+        f'style="width:{size}px;height:{size}px;object-fit:contain;">'
+    )
 
 
 # ============================================================
@@ -53,8 +95,8 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # ============================================================
 
 st.set_page_config(
-    page_title="ATMS | Smart Attendance",
-    page_icon="◉",
+    page_title=f"{DEPARTMENT_NAME} | Attendance",
+    page_icon=str(LOGO_PATH) if LOGO_PATH.exists() else "◉",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -206,10 +248,6 @@ section[data-testid="stSidebar"] * {
     padding: 20px;
     box-shadow: 0 5px 20px rgba(15,23,42,0.05);
     min-height: 125px;
-}
-
-.metric-icon {
-    font-size: 25px;
 }
 
 .metric-label {
@@ -928,7 +966,6 @@ def page_header(
 
 
 def metric_card(
-    icon,
     label,
     value,
 ):
@@ -936,10 +973,6 @@ def metric_card(
     html(
         f"""
         <div class="metric-card">
-
-            <div class="metric-icon">
-                {icon}
-            </div>
 
             <div class="metric-label">
                 {label}
@@ -966,19 +999,17 @@ def show_sidebar():
     with st.sidebar:
 
         html(
-            """
+            f"""
             <div class="sidebar-brand">
 
-                <div class="sidebar-logo">
-                    ◉
-                </div>
+                {logo_img_tag(70)}
 
                 <div class="sidebar-title">
-                    ATMS
+                    {UNIVERSITY_NAME}
                 </div>
 
                 <div class="sidebar-subtitle">
-                    Smart Attendance Management
+                    {DEPARTMENT_NAME}
                 </div>
 
             </div>
@@ -990,7 +1021,7 @@ def show_sidebar():
             <div class="user-card">
 
                 <strong>
-                    👤 {username}
+                    {username}
                 </strong>
 
                 <br>
@@ -1006,7 +1037,7 @@ def show_sidebar():
         if role == "admin":
 
             if st.button(
-                "🏠  Dashboard",
+                "Dashboard",
                 use_container_width=True,
             ):
 
@@ -1017,7 +1048,7 @@ def show_sidebar():
                 st.rerun()
 
             if st.button(
-                "👥  Manage Staff",
+                "Manage Staff",
                 use_container_width=True,
             ):
 
@@ -1028,7 +1059,7 @@ def show_sidebar():
                 st.rerun()
 
             if st.button(
-                "🎓  Students",
+                "Students",
                 use_container_width=True,
             ):
 
@@ -1041,7 +1072,7 @@ def show_sidebar():
         elif role == "staff":
 
             if st.button(
-                "🏠  Dashboard",
+                "Dashboard",
                 use_container_width=True,
             ):
 
@@ -1052,7 +1083,7 @@ def show_sidebar():
                 st.rerun()
 
             if st.button(
-                "➕  New Attendance",
+                "New Attendance",
                 use_container_width=True,
             ):
 
@@ -1063,7 +1094,7 @@ def show_sidebar():
                 st.rerun()
 
             if st.button(
-                "📋  Manage Attendance",
+                "Manage Attendance",
                 use_container_width=True,
             ):
 
@@ -1074,7 +1105,7 @@ def show_sidebar():
                 st.rerun()
 
             if st.button(
-                "🎓  Students",
+                "Students",
                 use_container_width=True,
             ):
 
@@ -1087,7 +1118,7 @@ def show_sidebar():
         st.divider()
 
         if st.button(
-            "🚪  Logout",
+            "Logout",
             use_container_width=True,
         ):
 
@@ -1113,17 +1144,17 @@ def login_page():
     with center:
 
         html(
-            """
+            f"""
             <div class="login-logo">
-                ◉
+                {logo_img_tag(90)}
             </div>
 
             <div class="login-title">
-                ATMS
+                {UNIVERSITY_NAME}
             </div>
 
             <div class="login-subtitle">
-                Smart Attendance Management System
+                {DEPARTMENT_NAME} — Smart Attendance Management System
             </div>
             """
         )
@@ -1205,7 +1236,7 @@ def login_page():
             <div class="info-card">
 
                 <div class="info-title">
-                    🎓 Student Portal
+                    Student Portal
                 </div>
 
                 <div class="info-text">
@@ -1219,7 +1250,7 @@ def login_page():
         )
 
         if st.button(
-            "🎓 Open Student Portal",
+            "Open Student Portal",
             use_container_width=True,
         ):
 
@@ -1248,11 +1279,11 @@ def admin_dashboard():
     sessions = get_all_sessions()
 
     html(
-        """
+        f"""
         <div class="hero">
 
             <div class="hero-title">
-                Welcome to ATMS 👋
+                Welcome to {DEPARTMENT_NAME} ATMS
             </div>
 
             <div class="hero-text">
@@ -1269,7 +1300,6 @@ def admin_dashboard():
     with col1:
 
         metric_card(
-            "👥",
             "Staff",
             staff_count,
         )
@@ -1277,7 +1307,6 @@ def admin_dashboard():
     with col2:
 
         metric_card(
-            "🎓",
             "Students",
             len(students),
         )
@@ -1285,7 +1314,6 @@ def admin_dashboard():
     with col3:
 
         metric_card(
-            "📋",
             "Attendance Sessions",
             len(sessions),
         )
@@ -1297,7 +1325,7 @@ def admin_dashboard():
     with col1:
 
         if st.button(
-            "👥 Manage Staff",
+            "Manage Staff",
             use_container_width=True,
         ):
 
@@ -1310,7 +1338,7 @@ def admin_dashboard():
     with col2:
 
         if st.button(
-            "🎓 View Students",
+            "View Students",
             use_container_width=True,
         ):
 
@@ -1357,7 +1385,7 @@ def staff_dashboard():
         <div class="hero">
 
             <div class="hero-title">
-                Welcome back 👋
+                Welcome back
             </div>
 
             <div class="hero-text">
@@ -1374,7 +1402,6 @@ def staff_dashboard():
     with col1:
 
         metric_card(
-            "🎓",
             "Registered Students",
             len(students),
         )
@@ -1382,7 +1409,6 @@ def staff_dashboard():
     with col2:
 
         metric_card(
-            "🟢",
             "Active Sessions",
             len(active_sessions),
         )
@@ -1390,7 +1416,6 @@ def staff_dashboard():
     with col3:
 
         metric_card(
-            "✓",
             "Total Attendance",
             total_attendance,
         )
@@ -1398,7 +1423,7 @@ def staff_dashboard():
     st.write("")
 
     if st.button(
-        "➕ Create New Attendance",
+        "Create New Attendance",
         type="primary",
         use_container_width=True,
     ):
@@ -1412,7 +1437,7 @@ def staff_dashboard():
     st.write("")
 
     if st.button(
-        "📋 Manage Attendance",
+        "Manage Attendance",
         use_container_width=True,
     ):
 
@@ -1754,7 +1779,8 @@ def print_qr_code(session):
     </head>
     <body>
         <div class="sheet">
-            <h1>ATMS</h1>
+            <h1>{UNIVERSITY_NAME}</h1>
+            <h2>{DEPARTMENT_NAME}</h2>
             <h2>{course}</h2>
             <p><strong>Lecturer:</strong> {lecturer}</p>
             <p>Scan this QR code to mark attendance.</p>
@@ -1771,6 +1797,153 @@ def print_qr_code(session):
         printable_html,
         height=600,
         scrolling=False,
+    )
+
+
+def print_attendance_list(session):
+    """
+    Renders a printable attendance sheet showing the course,
+    lecturer, date, and the list of students who marked
+    attendance for this session.
+    """
+
+    course = str(session.get("course", "Attendance"))
+    lecturer = str(session.get("lecturer", ""))
+    created_at = str(session.get("created_at", ""))
+    attendance = session.get("attendance", [])
+
+    logo_html = logo_img_tag(70)
+
+    rows_html = ""
+
+    for index, record in enumerate(attendance, start=1):
+
+        rows_html += f"""
+        <tr>
+            <td>{index}</td>
+            <td>{record.get('name', '')}</td>
+            <td>{record.get('admission_number', '')}</td>
+            <td>{record.get('time', '')}</td>
+        </tr>
+        """
+
+    if not rows_html:
+
+        rows_html = (
+            '<tr><td colspan="4" style="text-align:center;">'
+            "No attendance recorded for this session."
+            "</td></tr>"
+        )
+
+    printable_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Attendance Sheet</title>
+        <style>
+            body {{
+                font-family: Arial, sans-serif;
+                background: white;
+                color: #000;
+                margin: 0;
+                padding: 24px;
+            }}
+            .sheet {{
+                max-width: 720px;
+                margin: 0 auto;
+            }}
+            .header {{
+                text-align: center;
+                margin-bottom: 20px;
+            }}
+            .header h1 {{
+                margin: 6px 0 2px;
+                font-size: 20px;
+            }}
+            .header h2 {{
+                margin: 2px 0;
+                font-size: 15px;
+                color: #2563eb;
+            }}
+            .meta {{
+                margin-bottom: 18px;
+                font-size: 14px;
+            }}
+            .meta p {{
+                margin: 4px 0;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 12px;
+            }}
+            th, td {{
+                border: 1px solid #333;
+                padding: 8px;
+                font-size: 13px;
+                text-align: left;
+            }}
+            th {{
+                background: #f1f5f9;
+            }}
+            .print-btn {{
+                background: #2563eb;
+                color: white;
+                border: 0;
+                padding: 12px 24px;
+                border-radius: 6px;
+                font-weight: bold;
+                cursor: pointer;
+                margin-top: 20px;
+            }}
+            @media print {{
+                .print-btn {{ display: none; }}
+                body {{ padding: 0; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="sheet">
+
+            <div class="header">
+                {logo_html}
+                <h1>{UNIVERSITY_NAME}</h1>
+                <h2>{DEPARTMENT_NAME}</h2>
+            </div>
+
+            <div class="meta">
+                <p><strong>Course:</strong> {course}</p>
+                <p><strong>Lecturer:</strong> {lecturer}</p>
+                <p><strong>Date:</strong> {created_at}</p>
+                <p><strong>Total Present:</strong> {len(attendance)}</p>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Admission Number</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html}
+                </tbody>
+            </table>
+
+            <button class="print-btn" onclick="window.print()">Print Attendance Sheet</button>
+
+        </div>
+    </body>
+    </html>
+    """
+
+    components.html(
+        printable_html,
+        height=700,
+        scrolling=True,
     )
 
 
@@ -1950,6 +2123,13 @@ def attendance_records():
                             "Face Distance": record.get("face_distance", ""),
                         })
                     st.dataframe(rows, use_container_width=True, hide_index=True)
+
+                    if st.button(
+                        "Print Attendance List",
+                        key=f"print_attendance_{session_id}",
+                        use_container_width=True,
+                    ):
+                        print_attendance_list(session)
                 else:
                     st.info("No attendance has been marked for this session.")
 
@@ -1993,7 +2173,7 @@ def student_home():
         <div class="hero">
 
             <div class="hero-title">
-                Smart Attendance 🎓
+                Smart Attendance
             </div>
 
             <div class="hero-text">
@@ -2014,7 +2194,7 @@ def student_home():
             <div class="info-card">
 
                 <div class="info-title">
-                    👤 Student Registration
+                    Student Registration
                 </div>
 
                 <div class="info-text">
@@ -2046,7 +2226,7 @@ def student_home():
             <div class="info-card">
 
                 <div class="info-title">
-                    📷 Mark Attendance
+                    Mark Attendance
                 </div>
 
                 <div class="info-text">
@@ -2072,7 +2252,7 @@ def student_home():
     st.divider()
 
     if st.button(
-        "← Back to Login",
+        "Back to Login",
         use_container_width=True,
     ):
 
@@ -2096,7 +2276,7 @@ def student_register():
         """
         <div class="status-warning">
 
-            📸 Please capture at least 5 clear images.
+            Please capture at least 5 clear images.
             Make sure only one face is visible in each image.
 
         </div>
@@ -2123,7 +2303,7 @@ def student_register():
         )
 
         if st.button(
-            "← Back",
+            "Back",
             use_container_width=True,
         ):
 
@@ -2274,7 +2454,7 @@ def student_register():
     st.write("")
 
     if st.button(
-        "← Back to Student Portal",
+        "Back to Student Portal",
         use_container_width=True,
     ):
 
@@ -2362,7 +2542,7 @@ def student_attendance():
     if not qr_picture:
 
         if st.button(
-            "← Back",
+            "Back",
             use_container_width=True,
         ):
 
@@ -2520,7 +2700,7 @@ def student_attendance():
             """
             <div class="status-warning">
 
-                ⚠️ You have already marked attendance
+                You have already marked attendance
                 for this session.
 
             </div>
@@ -2563,7 +2743,7 @@ def student_attendance():
         f"""
         <div class="status-success">
 
-            ✓ Attendance Confirmed
+            Attendance Confirmed
 
             <br><br>
 
