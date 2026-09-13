@@ -111,6 +111,7 @@ CSS = """
 
 .stApp {
     background: #f5f7fb;
+    color: #0f172a;
 }
 
 #MainMenu {
@@ -129,6 +130,36 @@ header {
     padding-top: 2rem;
     padding-bottom: 3rem;
     max-width: 1250px;
+}
+
+
+/* ============================================================
+   TEXT COLOR SAFETY NET
+   Plain Streamlit widgets (labels, captions, subheaders, metric
+   text) don't have an explicit color set anywhere else in this
+   stylesheet, so they normally inherit the browser/OS theme.
+   That means they can render as invisible white-on-white if the
+   viewer's system is in dark mode. This block forces them dark,
+   scoped to the main content area only (not the sidebar, which
+   intentionally keeps white text on its dark background).
+============================================================ */
+
+[data-testid="stMain"] p,
+[data-testid="stMain"] span,
+[data-testid="stMain"] label,
+[data-testid="stMain"] small,
+[data-testid="stMain"] strong,
+[data-testid="stMain"] h1,
+[data-testid="stMain"] h2,
+[data-testid="stMain"] h3,
+[data-testid="stMain"] h4,
+[data-testid="stMain"] h5,
+[data-testid="stMain"] h6,
+[data-testid="stCaptionContainer"],
+[data-testid="stMetricLabel"],
+[data-testid="stMetricValue"],
+[data-testid="stWidgetLabel"] p {
+    color: #0f172a !important;
 }
 
 
