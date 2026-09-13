@@ -1826,8 +1826,8 @@ def print_qr_code(session):
 
     components.html(
         printable_html,
-        height=600,
-        scrolling=False,
+        height=750,
+        scrolling=True,
     )
 
 
@@ -2467,17 +2467,44 @@ def student_register():
 
             if success:
 
-                st.success(
-                    message
+                html(
+                    f"""
+                    <div class="status-success">
+
+                        Registration Successful
+
+                        <br><br>
+
+                        <strong>Name:</strong>
+                        {name.strip()}
+
+                        <br>
+
+                        <strong>Admission Number:</strong>
+                        {admission_number.strip()}
+
+                    </div>
+                    """
                 )
 
                 st.balloons()
 
-                st.session_state.page = (
-                    "student_home"
-                )
+                st.write("")
 
-                st.rerun()
+                if st.button(
+                    "Continue to Student Portal",
+                    type="primary",
+                    use_container_width=True,
+                    key="registration_continue",
+                ):
+
+                    st.session_state.page = (
+                        "student_home"
+                    )
+
+                    st.rerun()
+
+                return
 
             else:
 
