@@ -2452,17 +2452,20 @@ def student_register():
                 "Processing face images..."
             ):
 
+                # The student must exist before we can save a
+                # face embedding for them, since face_embeddings
+                # references students(admission_number).
+                upsert_student(
+                    name.strip(),
+                    admission_number.strip(),
+                )
+
                 success, message = register_face(
                     name.strip(),
                     admission_number.strip(),
                 )
 
             if success:
-
-                upsert_student(
-                    name.strip(),
-                    admission_number.strip(),
-                )
 
                 st.success(
                     message
