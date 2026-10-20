@@ -505,6 +505,20 @@ for key, value in DEFAULT_STATE.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
+if "nav_history" not in st.session_state:
+    st.session_state.nav_history = []
+
+if "_last_page" not in st.session_state:
+    st.session_state._last_page = None
+
+if "_going_back" not in st.session_state:
+    st.session_state._going_back = False
+
+# Pages that act as a "home" for a user. Arriving on one clears
+# the back-history, so Back never leads to the login screen
+# while someone is signed in.
+ROOT_PAGES = {"login", "admin_dashboard", "staff_dashboard"}
+
 
 # ============================================================
 # PASSWORD
@@ -978,10 +992,70 @@ def delete_attendance_session(session_id):
 # UI HELPERS
 # ============================================================
 
+def track_navigation():
+    """
+    Records the page the user just left so Back can return to it.
+    Works for every existing navigation button without having to
+    edit each one individually.
+    """
+
+    current = st.session_state.page
+    last = st.session_state._last_page
+
+    if current in ROOT_PAGES:
+
+        st.session_state.nav_history = []
+
+    elif last is not None and last != current:
+
+        if st.session_state._going_back:
+
+            st.session_state._going_back = False
+
+        else:
+
+            st.session_state.nav_history.append(last)
+
+            # Keep the history from growing without limit
+            st.session_state.nav_history = (
+                st.session_state.nav_history[-20:]
+            )
+
+    st.session_state._going_back = False
+    st.session_state._last_page = current
+
+
+def go_back():
+
+    history = st.session_state.nav_history
+
+    if history:
+
+        st.session_state._going_back = True
+        st.session_state.page = history.pop()
+
+    st.rerun()
+
+
+def back_button():
+
+    if not st.session_state.nav_history:
+        return
+
+    if st.button(
+        "Back",
+        key=f"back_{st.session_state.page}",
+    ):
+
+        go_back()
+
+
 def page_header(
     title,
     subtitle="",
 ):
+
+    back_button()
 
     html(
         f"""
@@ -2847,6 +2921,8 @@ def student_attendance():
 # ============================================================
 
 def main():
+
+    track_navigation()
 
     # --------------------------------------------------------
     # PUBLIC AREA
